@@ -1,0 +1,32 @@
+digraph ML_Pipeline {
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Arial", margin=0.2];
+    edge [fontname="Arial", fontsize=10];
+
+    // Nodes
+    Acquisition [label="1. Audio Acquisition\n(MIMII & Freesound .wav)", fillcolor="lightblue"];
+    Preprocessing [label="2. Preprocessing\n(Mono, 22.05 kHz, Normalize)", fillcolor="lightcyan"];
+    Segmentation [label="3. Duration Normalization\n(4.0s segments)", fillcolor="lightcyan"];
+    FeatureExtraction [label="4. Feature Extraction\n(2D Mel-Spectrogram)", fillcolor="lightyellow"];
+    DataSplit [label="5. Data Split\n(70% Train, 15% Val, 15% Test)", fillcolor="lightgreen"];
+    
+    Baseline [label="6. Baseline Model\n(Random Forest - 1D Features)", fillcolor="lightgrey"];
+    CNN [label="7. Neural Network\n(Lightweight 2D CNN)", fillcolor="bisque"];
+    
+    Evaluation [label="8. Evaluation\n(Recall, F1-Score, Confusion Matrix)", fillcolor="lightpink"];
+    ErrorAnalysis [label="9. Error Analysis\n(False Positives/Negatives)", fillcolor="lightcoral"];
+
+    // Edges
+    Acquisition -> Preprocessing;
+    Preprocessing -> Segmentation;
+    Segmentation -> FeatureExtraction;
+    FeatureExtraction -> DataSplit;
+    
+    DataSplit -> Baseline [label=" Comparison Route"];
+    DataSplit -> CNN [label=" Primary Route"];
+    
+    Baseline -> Evaluation;
+    CNN -> Evaluation;
+    
+    Evaluation -> ErrorAnalysis;
+}

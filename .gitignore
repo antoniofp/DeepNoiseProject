@@ -1,0 +1,15 @@
+# Python virtual environment
+src/.venv/
+__pycache__/
+*.pyc
+
+# Local dataset files (2.4 GB - excluded from version control)
+data/
+# Model weights and checkpoint files
+models/
+# Output results
+results/
+
+# Editor configuration and cache
+.vscode/
+.ipynb_checkpoints/
