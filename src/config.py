@@ -1,9 +1,13 @@
 import os
-import torch
+
+# Set PyTorch alloc configuration before importing torch to prevent VRAM fragmentation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # Ensure Keras uses PyTorch as the backend.
 # This environment variable MUST be set before Keras is imported anywhere in the project.
 os.environ["KERAS_BACKEND"] = "torch"
+
+import torch
 
 # Base Directory: The root directory of the DeepNoiseProject.
 # Calculated as the parent directory of the folder containing this config.py file.
@@ -56,9 +60,8 @@ HOP_LENGTH = 512
 # to converge when paired with early stopping.
 EPOCHS = 30
 
-# Batch size: 32 is a stable size for training deep learning models on standard GPUs
-# without hitting out-of-memory errors on the RTX 3050 Ti.
-BATCH_SIZE = 32
+# Batch size: Reduced to 16 to fit within the 4GB VRAM limit of the RTX 3050 Ti.
+BATCH_SIZE = 16
 
 # Learning rate: 0.001 is the standard default for the Adam optimizer, allowing stable convergence.
 LEARNING_RATE = 0.001
