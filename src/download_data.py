@@ -5,7 +5,7 @@ import zipfile
 import time
 
 # Import configuration paths from our centralized config module.
-# Since config.py sets KERAS_BACKEND, it is imported first.
+# Since config.py sets PYTORCH_CUDA_ALLOC_CONF, it is imported first.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import RAW_DATA_DIR
 

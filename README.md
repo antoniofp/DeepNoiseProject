@@ -50,7 +50,7 @@ source src/.venv/bin/activate
 ```
 
 ### 2. Install Dependencies
-Install the required packages. This includes Keras 3 (configured with a PyTorch backend), Librosa (for audio preprocessing), and Scikit-learn (for baselines):
+Install the required packages. This includes PyTorch, Librosa (for audio preprocessing), and Scikit-learn (for baselines):
 
 ```bash
 src/.venv/bin/pip install --upgrade pip

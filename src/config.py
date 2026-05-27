@@ -3,10 +3,6 @@ import os
 # Set PyTorch alloc configuration before importing torch to prevent VRAM fragmentation
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-# Ensure Keras uses PyTorch as the backend.
-# This environment variable MUST be set before Keras is imported anywhere in the project.
-os.environ["KERAS_BACKEND"] = "torch"
-
 import torch
 
 # Base Directory: The root directory of the DeepNoiseProject.
