@@ -79,5 +79,21 @@ This will download the archives from Zenodo, extract them directly into `data/ra
 
 ## Running the Code
 
-*   **Configurations:** All audio parameters (sample rate, Mel-spectrogram coefficients) and training configurations (epochs, batch size) are centralized in `src/config.py`.
-*   **Device Target:** The configuration script dynamically checks for CUDA support. If an Nvidia GPU and drivers are present, calculations will automatically run on the GPU.
+There are two ways to execute the pipeline:
+
+### Option A: Cell-by-Cell Notebook (Recommended for Humans)
+Open the master notebook [pipeline.ipynb](file:///home/jantofp/Documents/DeepNoiseProject/src/pipeline.ipynb) in your notebook editor or VS Code. You can execute each step cell-by-cell. It uses Jupyter `%run` magics to execute the corresponding Python scripts sequentially while explaining each step.
+
+### Option B: Command Line (CLI) Scripts
+If you prefer running individual scripts via terminal commands, execute them in this exact order:
+
+| Step | Command | Input | Output | Description |
+|---|---|---|---|---|
+| **1** | `src/.venv/bin/python3 src/download_data.py` | Remote Zenodo URLs | `data/raw/` | Downloads and extracts the DCASE dataset subsets (~2.4 GB). |
+| **2** | `src/.venv/bin/python3 src/preprocess.py` | `data/raw/` | `data/processed/` | Standardizes audio length (4.0s), sample rate, and volume. |
+| **3** | `src/.venv/bin/python3 src/extract_features.py` | `data/processed/` | `data/features/` | Extracts 2D Mel-spectrogram `.npy` arrays. |
+| **4** | `src/.venv/bin/python3 src/train.py` | `data/features/` | `models/best_cnn.pth`<br>`models/test_split.npz` | Trains the PyTorch CNN on GPU and saves model & test sets. |
+| **5** | `src/.venv/bin/python3 src/evaluate.py` | `models/test_split.npz` | `results/cnn_confusion_matrix.png` | Evaluates model and saves the confusion matrix heatmap. |
+
+*   **Configurations:** All audio parameters (sample rate, Mel-spectrogram coefficients) and training configurations (epochs, batch size) are centralized in [config.py](file:///home/jantofp/Documents/DeepNoiseProject/src/config.py).
+*   **Device Target:** The configuration script dynamically checks for CUDA support. If an Nvidia GPU (RTX 3050 Ti) and drivers are present, calculations will automatically run on the GPU.
