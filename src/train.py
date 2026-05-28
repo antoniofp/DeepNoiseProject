@@ -47,12 +47,18 @@ def load_dataset_2d():
             X.append(mel_spec)
             y.append(label)
             
-    # Convert lists to NumPy arrays
+    # Convert the Python lists of loaded individual arrays into a single unified NumPy array.
+    # We do this because standard Python lists are slow and cannot be split or manipulated
+    # by Scikit-Learn. Converting to np.array stacks the individual (128, 173) arrays into
+    # a unified 3D block of shape (N, 128, 173).
     X = np.array(X)
     y = np.array(y)
     
-    # Expand dimensions for single-channel representation:
-    # Converts shape (N, 128, 173) to channels-last shape (N, 128, 173, 1)
+    # Expand dimensions to add the dummy channel axis at the end, shifting from 3D to 4D:
+    # Converts shape (N, 128, 173) to channels-last shape (N, 128, 173, 1).
+    # - Why channels-last? NumPy, Scikit-Learn, and visualization libraries expect color channels at the end.
+    # - How does PyTorch handle this? Our model's forward() function detects the single channel at the end
+    #   and swaps it internally using x.permute(0, 3, 1, 2) before running the convolutions on the GPU.
     X = np.expand_dims(X, axis=-1)
     
     return X, y, class_to_label

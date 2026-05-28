@@ -55,10 +55,8 @@ class DeepNoiseCNN(nn.Module):
         # - Reduces height and width by half (downsampling), making the model less sensitive to the exact location of a sound.
         self.pool1 = nn.MaxPool2d(POOL_SIZE, POOL_SIZE)
         
-        # ==========================================
-        # CONVOLUTIONAL BLOCK 2
-        # ==========================================
-        
+
+        # CONVOLUTIONAL BLOCK 2        
         # Takes the 32 feature maps from Block 1 and produces 64 deeper feature maps.
         self.conv2 = nn.Conv2d(in_channels=CONV_FILTERS[0], out_channels=CONV_FILTERS[1], kernel_size=KERNEL_SIZE, padding=1)
         self.bn2 = nn.BatchNorm2d(CONV_FILTERS[1])
