@@ -22,11 +22,10 @@ from cnn_model import build_cnn_model
 def load_dataset_2d():
     """
     Loads 2D Mel-spectrogram features from disk:
-    Reads .npy files, maps folder names to integer labels, and reshapes arrays.
+    Scans the directories, pre-allocates a single contiguous NumPy array to match the total file count,
+    and loads binary data directly into the allocated memory slices (bypassing slow Python lists).
     """
     print("Scanning feature directories...")
-    X = []
-    y = []
     
     # Identify directories representing classes (e.g., fan_normal, fan_anomaly, etc.)
     class_folders = sorted([d for d in os.listdir(FEATURES_DIR) if os.path.isdir(os.path.join(FEATURES_DIR, d))])
@@ -35,32 +34,38 @@ def load_dataset_2d():
     class_to_label = {class_name: idx for idx, class_name in enumerate(class_folders)}
     print("Class-to-Label mapping:", class_to_label)
     
+    # First, collect all file paths and their associated class labels to determine total count
+    all_files_and_labels = []
     for class_name in class_folders:
         class_dir = os.path.join(FEATURES_DIR, class_name)
         npy_files = glob.glob(os.path.join(class_dir, "*.npy"))
         label = class_to_label[class_name]
-        
-        print(f"Loading {len(npy_files)} files for class: {class_name}")
+        print(f"Found {len(npy_files)} files for class: {class_name}")
         for file_path in npy_files:
-            # Load numpy binary array
-            mel_spec = np.load(file_path)
-            X.append(mel_spec)
-            y.append(label)
+            all_files_and_labels.append((file_path, label))
             
-    # Convert the Python lists of loaded individual arrays into a single unified NumPy array.
-    # We do this because standard Python lists are slow and cannot be split or manipulated
-    # by Scikit-Learn. Converting to np.array stacks the individual (128, 173) arrays into
-    # a unified 3D block of shape (N, 128, 173).
-    X = np.array(X)
-    y = np.array(y)
+    total_files = len(all_files_and_labels)
+    if total_files == 0:
+        print("Error: No feature files found. Run extract_features.py first.")
+        sys.exit(1)
+        
+    # Read the first file to inspect its 2D dimensions dynamically (e.g. 128 Mel bands by 173 time frames)
+    sample_spec = np.load(all_files_and_labels[0][0])
+    height, width = sample_spec.shape
+    print(f"Detected spectrogram dimensions: Height (Mel bands) = {height} | Width (Time bins) = {width}")
+    print(f"Pre-allocating contiguous memory for {total_files} samples...")
     
-    # Expand dimensions to add the dummy channel axis at the end, shifting from 3D to 4D:
-    # Converts shape (N, 128, 173) to channels-last shape (N, 128, 173, 1).
-    # - Why channels-last? NumPy, Scikit-Learn, and visualization libraries expect color channels at the end.
-    # - How does PyTorch handle this? Our model's forward() function detects the single channel at the end
-    #   and swaps it internally using x.permute(0, 3, 1, 2) before running the convolutions on the GPU.
-    X = np.expand_dims(X, axis=-1)
+    # Pre-allocate contiguous arrays directly in memory.
+    # X shape will be (N, Height, Width, 1) to match channels-last standard grayscale image layout.
+    X = np.empty((total_files, height, width, 1), dtype=np.float32)
+    y = np.empty((total_files,), dtype=np.int64)
     
+    # Load binary .npy files directly into their pre-allocated slots.
+    # This completely bypasses Python list overhead and prevents multiple memory copies.
+    for idx, (file_path, label) in enumerate(all_files_and_labels):
+        X[idx, ..., 0] = np.load(file_path)
+        y[idx] = label
+        
     return X, y, class_to_label
 
 def main():
