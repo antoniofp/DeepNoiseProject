@@ -213,42 +213,56 @@ def main():
             optimizer.step()
             
             # --- Track Training Metrics ---
-            # Multiply loss by batch size since loss is averaged over the batch
+            # 1. `loss.item()` represents the AVERAGE loss (error) per sample in the batch.
+            #    We multiply it by the current batch size `len(x_batch)` to get the SUM of all errors in this batch.
+            #    We do this because the last batch of the dataset might be smaller than 16 (e.g. 12 samples),
+            #    and we must weight the errors correctly to calculate a true overall dataset average.
             train_loss += loss.item() * len(x_batch)
-            # Find index of the highest logit prediction
+            
+            # 2. `outputs` is shape (16, 4) holding raw scores (logits) for the 4 classes.
+            #    `torch.argmax(outputs, dim=-1)` looks at each row (columns along dim=-1) and returns 
+            #    the column index (0, 1, 2, or 3) containing the highest score (the model's prediction).
             preds = torch.argmax(outputs, dim=-1)
-            # Count correct predictions
+            
+            # 3. `preds == y_batch` yields boolean values (True for match, False for mismatch).
+            #    `torch.sum` converts True to 1 and False to 0, summing them up to count correct guesses.
+            #    `.item()` extracts the raw Python integer from the single-value PyTorch tensor.
             train_correct += torch.sum(preds == y_batch).item()
             train_total += len(x_batch)
             
-        # Calculate final training metrics for this epoch
+        # Calculate final training metrics for this epoch by dividing the total sum of errors 
+        # and correct predictions by the total number of samples processed.
         train_loss /= train_total
         train_acc = train_correct / train_total
         
         # -------------------------------------------------------------------------
         # VALIDATION PASS (To evaluate generalization and prevent overfitting)
         # -------------------------------------------------------------------------
-        # Set model to evaluation mode. 
-        # This tells layers like Dropout to turn OFF.
+        # 1. Set the model to evaluation mode.
+        #    This automatically disables layers like Dropout (we want all neurons active)
+        #    and freezes BatchNorm layers so they use their accumulated "running averages"
+        #    rather than computing new averages from the validation batch.
         model.eval()
         
         val_loss = 0.0
         val_correct = 0
         val_total = 0
         
-        # Turn off gradient calculation history to save memory and compute speed
+        # 2. Open a context manager that disables gradient tracking history.
+        #    Because we are not training, we do not need to calculate gradients or backward steps.
+        #    Disabling history allows PyTorch to discard intermediate variables (activations)
+        #    immediately, freeing up a massive amount of VRAM and speeding up calculations.
         with torch.no_grad():
-            # Loop through validation batches
+            # Loop through validation batches in the loader
             for x_val, y_val in val_loader:
                 x_val = x_val.to(DEVICE)
                 y_val = y_val.to(DEVICE)
                 
-                # Feedforward pass
+                # Feed validation batch forward through model
                 outputs = model(x_val)
-                # Compute loss
                 loss = loss_fn(outputs, y_val)
                 
-                # Track Validation Metrics
+                # Track Validation Metrics (using the same math as the training metrics)
                 val_loss += loss.item() * len(x_val)
                 preds = torch.argmax(outputs, dim=-1)
                 val_correct += torch.sum(preds == y_val).item()
@@ -258,10 +272,10 @@ def main():
         val_loss /= val_total
         val_acc = val_correct / val_total
         
-        # Print epoch metrics progress
+        # Print epoch metrics progress to trace model improvement
         print(f"Epoch {epoch+1:02d}/{EPOCHS} - loss: {train_loss:.4f} - accuracy: {train_acc:.4f} - val_loss: {val_loss:.4f} - val_accuracy: {val_acc:.4f}")
         
-        # Record history for plotting
+        # Record history for plotting curves later
         history["loss"].append(train_loss)
         history["accuracy"].append(train_acc)
         history["val_loss"].append(val_loss)
@@ -270,25 +284,31 @@ def main():
         # -------------------------------------------------------------------------
         # EARLY STOPPING AND CHECKPOINTING
         # -------------------------------------------------------------------------
-        # If the validation loss is the best we've seen, save the weights!
+        # If the validation loss in this epoch is the lowest we've seen so far, checkpoint the weights!
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            patience_counter = 0
-            # Clone state dict parameters to prevent references from updating on subsequent epochs
+            patience_counter = 0 # Reset patience counter since progress was made
+            
+            # Clone all model parameters.
+            # In Python, model.state_dict() returns pointers to the weight tensors.
+            # We must use `.clone()` to copy the actual float values to a new memory slot,
+            # otherwise the weights in our best_state_dict would change as training continues.
             best_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
-            # Write the best model weights to disk
+            
+            # Save the copied weights to a binary file on disk
             torch.save(best_state_dict, best_model_path)
             print(f"  val_loss improved, saving model checkpoint to: {best_model_path}")
         else:
-            # If validation loss did not improve, increment early stopping counter
+            # If validation loss did not improve, increment the patience penalty
             patience_counter += 1
             if patience_counter >= patience:
+                # If we go 5 consecutive epochs without improvement, stop training early to avoid overfitting
                 print(f"  Early stopping triggered! Training stopped at epoch {epoch+1}.")
                 break
                 
-    # Restore the model weights from the best performing epoch
+    # Restore the model weights from the best performing epoch.
+    # This throws away the final overfitted weights and loads the optimal parameter states back in.
     model.load_state_dict(best_state_dict)
-    # Save the final best weights
     torch.save(best_state_dict, best_model_path)
     print("\nModel training completed and best weights saved!")
     
