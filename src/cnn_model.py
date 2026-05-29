@@ -3,138 +3,111 @@ import torch.nn as nn
 
 # --- CNN Architecture Hyperparameters ---
 # The number of convolutional filters (feature maps) extracted in each respective block.
-# We start with 32 filters for low-level features, then increase to 64 and 128 to capture complex sound combinations.
 CONV_FILTERS = [32, 64, 128]
 
 # The height and width of the 2D sliding filter window.
-# A 3x3 kernel size is a standard choice that captures local patterns without excessive parameters.
 KERNEL_SIZE = 3
 
 # The size of the Max Pooling window.
-# A 2x2 pooling size halves the height and width dimensions, reducing spatial resolution by a factor of 4.
 POOL_SIZE = 2
 
-# Number of hidden neurons in the fully connected (dense) classification hidden layer.
-DENSE_UNITS = 64
+# Number of hidden neurons in our two fully connected (dense) layers.
+# We increase the capacity to [128, 64] to handle the larger volume of flattened inputs (43,008).
+DENSE_UNITS = [128, 64]
 
-# The probability that any given hidden neuron will be randomly deactivated (zeroed) during training.
-# 0.3 means 30% of the neurons are disabled on each step, forcing robust feature redundancy.
+# Dropout probability to prevent overfitting in the dense layers.
 DROPOUT_RATE = 0.3
 
 class DeepNoiseCNN(nn.Module):
     """
     A lightweight 2D Convolutional Neural Network (CNN) in native PyTorch.
-    Designed for classification of Mel-spectrogram audio representations.
+    Optimized for anomaly classification of Mel-spectrogram audio representations.
     
-    This class inherits from PyTorch's base `nn.Module`. 
-    In PyTorch, all custom neural network architectures must inherit from `nn.Module`
-    so that PyTorch can automatically register layers, track parameters, and calculate gradients.
+    In this version:
+    - We removed Global Average Pooling (GAP) to preserve temporal and frequency locations.
+    - We flatten the output of Conv Block 3 (128 channels * 16 height * 21 width = 43,008 features).
+    - We added a deeper classification head: Linear(43008 -> 128) -> Linear(128 -> 64) -> Output(4).
     """
     def __init__(self, num_classes=4):
-        # We must call the parent class constructor (nn.Module) first.
-        # This initializes the underlying PyTorch graph registration and layer tracking.
         super(DeepNoiseCNN, self).__init__()
         
         # ==========================================
         # CONVOLUTIONAL BLOCK 1
         # ==========================================
-        
-        # 1. 2D Convolution Layer
-        # - in_channels=1: Grayscale Mel-spectrogram inputs have a single audio channel.
-        # - out_channels=32: The layer will learn 32 distinct 3x3 feature detector filters.
-        # - padding=1: Adds a 1-pixel border of zeros to keep height & width constant after the convolution.
+        # Input shape: (Batch, 1, 128, 173)
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=CONV_FILTERS[0], kernel_size=KERNEL_SIZE, padding=1)
-        
-        # 2. 2D Batch Normalization
-        # - normalizes the activations of the 32 feature channels across the batch.
-        # - Prevents gradients from vanishing or exploding, allowing faster training.
         self.bn1 = nn.BatchNorm2d(CONV_FILTERS[0])
-        
-        # 3. 2D Max Pooling
-        # - Slides a 2x2 window across the image and outputs only the maximum value in each window.
-        # - Reduces height and width by half (downsampling), making the model less sensitive to the exact location of a sound.
+        # Downsamples 128x173 to 64x86
         self.pool1 = nn.MaxPool2d(POOL_SIZE, POOL_SIZE)
         
-
-        # CONVOLUTIONAL BLOCK 2        
-        # Takes the 32 feature maps from Block 1 and produces 64 deeper feature maps.
+        # ==========================================
+        # CONVOLUTIONAL BLOCK 2
+        # ==========================================
+        # Input shape: (Batch, 32, 64, 86)
         self.conv2 = nn.Conv2d(in_channels=CONV_FILTERS[0], out_channels=CONV_FILTERS[1], kernel_size=KERNEL_SIZE, padding=1)
         self.bn2 = nn.BatchNorm2d(CONV_FILTERS[1])
+        # Downsamples 64x86 to 32x43
         self.pool2 = nn.MaxPool2d(POOL_SIZE, POOL_SIZE)
         
         # ==========================================
         # CONVOLUTIONAL BLOCK 3
         # ==========================================
-        
-        # Takes the 64 feature maps from Block 2 and produces 128 deep feature maps.
+        # Input shape: (Batch, 64, 32, 43)
         self.conv3 = nn.Conv2d(in_channels=CONV_FILTERS[1], out_channels=CONV_FILTERS[2], kernel_size=KERNEL_SIZE, padding=1)
         self.bn3 = nn.BatchNorm2d(CONV_FILTERS[2])
+        # Downsamples 32x43 to 16x21 (using floor division for odd dimensions)
         self.pool3 = nn.MaxPool2d(POOL_SIZE, POOL_SIZE)
         
         # ==========================================
-        # GLOBAL POOLING AND CLASSIFICATION LAYERS
+        # DEEPER CLASSIFICATION DENSE BLOCK
         # ==========================================
         
-        # 1. Global Average Pooling (GAP)
-        # - Computes the average value of each of the 128 channels across its entire height and width.
-        # - Reduces any spatial shape (e.g., 16x21) down to a simple 1x1 size.
-        # - Greatly reduces parameters, makes the model input-size flexible, and fights overfitting.
-        self.gap = nn.AdaptiveAvgPool2d(1)
+        # 1. First Dense Layer
+        # - Input: 128 channels * 16 height * 21 width = 43,008 features.
+        # - Output: 128 hidden units.
+        self.fc1 = nn.Linear(CONV_FILTERS[2] * 16 * 21, DENSE_UNITS[0])
         
-        # 2. Dense (Linear) Hidden Layer
-        # - Maps the 128 averaged channel features down to 64 intermediate hidden units.
-        self.fc1 = nn.Linear(CONV_FILTERS[2], DENSE_UNITS)
+        # 2. Second Dense Layer
+        # - Input: 128 units from fc1.
+        # - Output: 64 hidden units.
+        self.fc2 = nn.Linear(DENSE_UNITS[0], DENSE_UNITS[1])
         
-        # 3. Dropout Regularization
-        # - Randomly zeroes out 30% of activations in the dense layer during training to prevent memorization.
+        # 3. Output Classification Layer
+        # - Maps the 64 hidden units to the 4 output logits (class scores).
+        self.fc3 = nn.Linear(DENSE_UNITS[1], num_classes)
+        
+        # Regularization and Activations
         self.dropout = nn.Dropout(p=DROPOUT_RATE)
-        
-        # 4. Dense (Linear) Output Layer
-        # - Maps the 64 hidden units to the final 4 output scores (one for each machine category).
-        # - Outputs raw "logits" (unnormalized scores) compatible with PyTorch's CrossEntropyLoss.
-        self.fc2 = nn.Linear(DENSE_UNITS, num_classes)
-        
-        # 5. Non-linear Activation Function
-        # - Rectified Linear Unit: returns 0 if input is negative, and returns the input value if positive.
         self.relu = nn.ReLU()
         
     def forward(self, x):
         """
-        Defines the computation graph of the model. 
-        It describes how the input tensor `x` travels step-by-step through the layers.
-        
-        Input shape: (Batch Size, Height, Width, Channels) -> e.g., (16, 128, 173, 1)
+        Defines the computation graph of the model.
+        Input shape: (Batch, Height, Width, Channels) -> e.g., (16, 128, 173, 1)
         """
-        # Step 1: Reshape input layout if it is channels-last
-        # PyTorch requires (Batch, Channels, Height, Width).
-        # permute(0, 3, 1, 2) swaps axes: Batch (0) stays first, Channel (3) goes second, Height (1) third, Width (2) fourth.
+        # Step 1: Reshape input layout if it is channels-last to channels-first (N, C, H, W)
         if x.dim() == 4 and x.shape[-1] == 1:
             x = x.permute(0, 3, 1, 2)
             
-        # Step 2: Feed through Conv Block 1
-        # Order: Convolution -> Batch Normalization -> ReLU Activation -> Max Pooling
+        # Step 2: Feed through Conv Blocks
         x = self.pool1(self.relu(self.bn1(self.conv1(x))))
-        
-        # Step 3: Feed through Conv Block 2
         x = self.pool2(self.relu(self.bn2(self.conv2(x))))
-        
-        # Step 4: Feed through Conv Block 3
         x = self.pool3(self.relu(self.bn3(self.conv3(x))))
         
-        # Step 5: Perform Global Average Pooling
-        # Converts shape from (Batch, 128, Height, Width) to (Batch, 128, 1, 1)
-        x = self.gap(x)
+        # Step 3: Flatten the 3D conv maps to 1D feature vectors
+        # Converts shape from (Batch, 128, 16, 21) directly to (Batch, 43008), preserving all spatial coordinates.
+        # We use .reshape() instead of .view() because x is non-contiguous after the permute/transpose step.
+        x = x.reshape(x.size(0), -1)
         
-        # Step 6: Flatten spatial dimensions
-        # view(Batch, -1) reshapes the tensor from (Batch, 128, 1, 1) to a flat (Batch, 128) per sample.
-        x = x.view(x.size(0), -1)
-        
-        # Step 7: Feed through Hidden Dense Layer with Dropout
+        # Step 4: First Dense Layer with ReLU and Dropout
         x = self.dropout(self.relu(self.fc1(x)))
         
-        # Step 8: Calculate final output logits
-        # Returns shape (Batch, 4) containing raw predictions for each machine class.
-        x = self.fc2(x)
+        # Step 5: Second Dense Layer with ReLU and Dropout (Deeper classification head)
+        x = self.dropout(self.relu(self.fc2(x)))
+        
+        # Step 6: Output logits
+        # Yields shape (Batch, 4)
+        x = self.fc3(x)
         return x
 
 def build_cnn_model(num_classes=4):
