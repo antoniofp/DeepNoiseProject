@@ -39,17 +39,16 @@ AUDIO_DURATION = 4.0
 MONO = True
 
 # --- Feature Extraction Hyperparameters (Mel-Spectrogram) ---
-# n_mels: Number of Mel bands to generate. 128 is standard as it mimics human hearing
-# logarithmic perception and yields a detailed 2D frequency resolution.
-N_MELS = 128
+# n_mels: Number of Mel bands to generate. Increased to 256 for finer frequency details.
+N_MELS = 256
 
 # n_fft: Length of the FFT window. 2048 samples corresponds to ~93ms at 22050Hz,
 # which is a standard window size for speech and acoustic machine classification.
 N_FFT = 2048
 
-# hop_length: Number of samples between successive FFT frames. 512 samples (~23ms)
-# provides a 75% overlap, offering a smooth time-frequency representation.
-HOP_LENGTH = 512
+# hop_length: Number of samples between successive FFT frames. Reduced to 256 samples (~12ms)
+# to double the temporal resolution, capturing short transient clicks and squeaks.
+HOP_LENGTH = 256
 
 # --- Model & Training Hyperparameters ---
 # Number of epochs for baseline/CNN training. 30 epochs is sufficient for the CNN
