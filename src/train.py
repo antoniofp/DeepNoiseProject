@@ -182,21 +182,34 @@ def main():
             x_batch = x_batch.to(DEVICE)
             y_batch = y_batch.to(DEVICE)
             
-            # --- The 5-Step Optimization Dance ---
+            # --- The 5-Step Optimization Dance (Autograd and Pointer Mechanics) ---
             
-            # Step 1: Clear the accumulated gradients from the last step
+            # Step 1: Clear the accumulated gradients from the last step.
+            # PyTorch accumulates (sums) gradients by default. We must clear the old gradients 
+            # (zeroing out the .grad attribute of every weight) so they don't corrupt the new step.
             optimizer.zero_grad()
             
-            # Step 2: Feedforward pass - get predicted logits from the model
+            # Step 2: Feedforward pass - get predicted logits from the model.
+            # When we pass x_batch through the model, PyTorch dynamically constructs a history tree
+            # (computational graph). The output tensor `outputs` secretly holds pointers that trace
+            # backward through every mathematical operation and point to the model's weights.
             outputs = model(x_batch)
             
-            # Step 3: Compute the loss value (error penalty)
+            # Step 3: Compute the loss value (error penalty).
+            # By passing `outputs` into the loss function, the calculated `loss` tensor is linked
+            # to the top of the history tree, creating a complete map from the loss to the weights.
             loss = loss_fn(outputs, y_batch)
             
-            # Step 4: Backward pass - compute gradients of the loss w.r.t model weights
+            # Step 4: Backward pass (Backpropagation).
+            # PyTorch traverses the history tree backward starting from the `loss` tensor.
+            # It calculates the gradient (direction of error) for each weight and writes that value
+            # directly into the weight's own `.grad` attribute (e.g. self.conv1.weight.grad) in GPU memory.
             loss.backward()
             
-            # Step 5: Update the weights in-place using the calculated gradients
+            # Step 5: Update the weights in-place using the calculated gradients.
+            # The optimizer holds a list of pointers to the model's weights. When we call step(),
+            # it loops through those weights, reads their `.grad` attributes (which were just written
+            # by loss.backward()), calculates the updates, and modifies the weights in-place.
             optimizer.step()
             
             # --- Track Training Metrics ---
