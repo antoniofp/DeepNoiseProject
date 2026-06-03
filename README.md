@@ -75,7 +75,8 @@ If running Jupyter notebooks from VS Code or a notebook server, register the ker
 *   **Models:** 128-dim Random Forest baseline, and a custom **4x4 Hybrid Pooling 2D CNN** (achieving 61% Recall on Fan anomaly and 60% Recall on Pump anomaly).
 *   **Status:** Complete & Runnable.
 
-### [02. Environmental Sound Classification](file:///home/jantofp/Documents/DeepNoiseProject/02_environmental_sound/README.md)
-*   **Objective:** Classify environmental sound recordings into multiple distinct classes (e.g. urban, nature, or custom sounds).
-*   **Models:** Planned baseline and CNN models.
-*   **Status:** Under Active Initialization.
+### [02. Environmental Sound Classification (Animal Sounds)](file:///home/jantofp/Documents/DeepNoiseProject/02_environmental_sound/README.md)
+*   **Objective:** Classify environmental animal vocalizations (8 target classes: dog, rooster, pig, cow, frog, cat, sheep, hen) from the ESC-50 dataset.
+*   **Models:** 256-dim Random Forest baseline (**54.69%** accuracy), Clean CNN (**64.06%**), and an Augmented CNN (**70.31%** test accuracy; **84.38%** production validation accuracy). 
+*   **Performance:** Represents the **best overall classification performance** in this repository (+15.62% test accuracy over its baseline).
+*   **Status:** Complete & Production-Ready (includes real-time microphone live demonstration tool).

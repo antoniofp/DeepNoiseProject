@@ -33,5 +33,53 @@ This subproject shares the repository's root virtual environment `.venv`. To act
 source ../.venv/bin/activate
 ```
 
-### 2. Coming Soon
-The audio pipeline, feature extraction, and neural network classification architectures for this project are currently being initialized.
+### 2. Execution Pipeline
+The entire workflow is automated and can be executed via the Jupyter Notebook [pipeline.ipynb](src/pipeline.ipynb), or step-by-step using Python scripts in `src/`:
+
+*   **Ingest Data:** Download and extract the 8 animal classes from ESC-50:
+    ```bash
+    python src/download_data.py
+    ```
+*   **Preprocessing & Augmentations:** Downsample to 22.05kHz, apply 15 variations in parallel (1 original, 6 single, 8 combined), and extract Mel-spectrograms:
+    ```bash
+    python src/preprocess.py
+    ```
+*   **Traditional ML Baselines:** Train RF & SVM classifiers on statistical summaries, validating and testing on strictly clean splits:
+    ```bash
+    python src/baseline_model.py
+    ```
+*   **CNN Model Training & Evaluation:** Train both clean and augmented CNN models sequentially, and evaluate them on the unseen clean test split:
+    ```bash
+    python src/train.py
+    python src/evaluate.py
+    ```
+*   **Train Production Model:** Train the final model across all 5 folds using a stratified 90/10 split (90% training with 15 augmentations, 10% clean validation for early stopping):
+    ```bash
+    python src/train_full.py
+    ```
+
+---
+
+## Performance Summary
+
+This project contains the **best-performing implementation** in the DeepNoise repository:
+*   **Random Forest Baseline:** **54.69%** test accuracy.
+*   **Clean CNN (No Augmentation):** **64.06%** test accuracy.
+*   **Augmented CNN (15 Variations):** **70.31%** test accuracy.
+*   **Full Production Model Validation:** **84.38%** clean validation accuracy.
+
+For detailed analysis, architectures, and curves, see [docs/Final_Report.md](docs/Final_Report.md).
+
+---
+
+## Real-Time Live Demonstration
+
+An interactive, real-time live demo is available to record and classify environmental sounds from your laptop microphone:
+
+1.  Make sure your microphone is connected and configured in your OS settings.
+2.  Run the live demo tool:
+    ```bash
+    python src/live_demo.py
+    ```
+3.  Choose **Option [3] Full Production Model** (Recommended).
+4.  Press **Enter** to start the 5-second recording, play/make a sound, and review the predicted class probabilities!
