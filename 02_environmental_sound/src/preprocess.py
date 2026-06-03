@@ -75,6 +75,24 @@ def preprocess_single_file(args):
         # Additive Noise
         variations["noise"] = y + np.random.normal(0, 0.005, len(y))
         
+        # --- Combined Augmentations ---
+        # Pitch Up + Time Shift
+        variations["pitch_up_shift"] = np.roll(variations["pitch_up"], shift_samples)
+        # Pitch Down + Time Shift
+        variations["pitch_down_shift"] = np.roll(variations["pitch_down"], shift_samples)
+        # Pitch Up + Additive Noise
+        variations["pitch_up_noise"] = variations["pitch_up"] + np.random.normal(0, 0.005, len(y))
+        # Pitch Down + Additive Noise
+        variations["pitch_down_noise"] = variations["pitch_down"] + np.random.normal(0, 0.005, len(y))
+        # Speed Up + Time Shift
+        variations["speed_up_shift"] = np.roll(variations["speed_up"], shift_samples)
+        # Speed Down + Time Shift
+        variations["speed_down_shift"] = np.roll(variations["speed_down"], shift_samples)
+        # Speed Up + Additive Noise
+        variations["speed_up_noise"] = variations["speed_up"] + np.random.normal(0, 0.005, len(y))
+        # Speed Down + Additive Noise
+        variations["speed_down_noise"] = variations["speed_down"] + np.random.normal(0, 0.005, len(y))
+        
         # 3. Extract and save Mel-spectrogram for each variation
         for var_name, y_var in variations.items():
             mel_spec = librosa.feature.melspectrogram(
@@ -130,7 +148,7 @@ def main():
         return
         
     print(f"\nStarting parallel preprocessing and data augmentation...")
-    print(f"This will extract {total_files * 7} total Mel-spectrogram features.")
+    print(f"This will extract {total_files * 15} total Mel-spectrogram features.")
     
     success_count = 0
     failure_count = 0
@@ -154,7 +172,7 @@ def main():
                 sys.stdout.flush()
                 
     print(f"\nPreprocessing finished!")
-    print(f"Successfully processed: {success_count} files (generating {success_count * 7} feature arrays).")
+    print(f"Successfully processed: {success_count} files (generating {success_count * 15} feature arrays).")
     print(f"Failures: {failure_count}.")
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,23 +16,20 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import FEATURES_DIR, MODELS_DIR, RESULTS_DIR, BATCH_SIZE, EPOCHS, LEARNING_RATE, DEVICE, CLASSES
 from cnn_model import build_cnn_model
 
-def load_dataset_by_fold(with_augmentation=True):
+def load_stratified_dataset(val_ratio=0.1, random_seed=42):
     """
-    Scans the extracted Mel-spectrogram features, parses the fold index from the
-    filename prefix, and splits the data:
-    - Folds 1-3: Training (augmented if with_augmentation=True, otherwise clean)
-    - Fold 4: Validation (always clean)
-    - Fold 5: Testing (always clean)
-    
-    Returns features and labels pre-allocated into memory arrays.
+    Shuffles and splits the original ESC-50 animal recordings to prevent data leakage:
+    1. Groups Mel-spectrogram features by their original recording clip (base clip name).
+    2. Randomly selects 10% of base clips per class for validation, 90% for training.
+    3. For validation clips, loads only the original unaugmented files (_orig.npy).
+    4. For training clips, loads all 15 variations (original + augmented).
     """
-    print(f"Scanning feature directories for fold splits (with_augmentation={with_augmentation})...")
+    print(f"Scanning features directory: {FEATURES_DIR}")
+    random.seed(random_seed)
     
-    train_info = []
-    val_info = []
-    test_info = []
+    train_paths = []
+    val_paths = []
     
-    # Check if features directory exists
     if not os.path.exists(FEATURES_DIR) or len(os.listdir(FEATURES_DIR)) == 0:
         raise FileNotFoundError("Features directory is empty. Run preprocess.py first.")
 
@@ -43,26 +41,43 @@ def load_dataset_by_fold(with_augmentation=True):
         class_idx = CLASSES.index(class_name)
         npy_files = glob.glob(os.path.join(class_dir, "*.npy"))
         
-        for file_path in npy_files:
-            basename = os.path.basename(file_path)
-            # The first character of ESC-50 filenames represents the fold index (1 to 5)
-            fold = int(basename[0])
+        # 1. Group files by their base recording name
+        # Example base name: '1-100032-A-0' extracted from '1-100032-A-0_orig.npy'
+        base_clips = set()
+        for path in npy_files:
+            basename = os.path.basename(path)
+            base_name = basename.split("_")[0]
+            base_clips.add(base_name)
+            
+        base_clips = sorted(list(base_clips))  # Ensure deterministic order before shuffling
+        random.shuffle(base_clips)
+        
+        # 2. Split base clips (10% validation, 90% training)
+        num_val = int(len(base_clips) * val_ratio)
+        if num_val == 0:
+            num_val = 1
+            
+        val_clips = set(base_clips[:num_val])
+        train_clips = set(base_clips[num_val:])
+        
+        print(f"  Class '{class_name}': {len(train_clips)} train clips, {len(val_clips)} validation clips")
+        
+        # 3. Associate files with splits
+        for path in npy_files:
+            basename = os.path.basename(path)
+            base_name = basename.split("_")[0]
             is_orig = basename.endswith("_orig.npy")
             
-            if fold in [1, 2, 3]:
-                if with_augmentation or is_orig:
-                    train_info.append((file_path, class_idx))
-            elif fold == 4:
-                # Validation set should always be clean/unaugmented
+            if base_name in val_clips:
+                # Validation split only takes original clean recordings
                 if is_orig:
-                    val_info.append((file_path, class_idx))
-            elif fold == 5:
-                # Test set should always be clean/unaugmented
-                if is_orig:
-                    test_info.append((file_path, class_idx))
+                    val_paths.append((path, class_idx))
+            elif base_name in train_clips:
+                # Training split takes original + all augmented variations
+                train_paths.append((path, class_idx))
 
     # Read a sample to inspect input dimensions dynamically
-    sample_spec = np.load(train_info[0][0])
+    sample_spec = np.load(train_paths[0][0])
     height, width = sample_spec.shape
     print(f"Spectrogram shape: {height} Mel bands x {width} time frames")
     
@@ -75,25 +90,18 @@ def load_dataset_by_fold(with_augmentation=True):
             y[idx] = label
         return X, y
 
-    print(f"Loading {len(train_info)} training samples (Folds 1-3)...")
-    X_train, y_train = allocate_and_load(train_info)
+    print(f"Loading {len(train_paths)} training samples (augmented)...")
+    X_train, y_train = allocate_and_load(train_paths)
     
-    print(f"Loading {len(val_info)} validation samples (Fold 4)...")
-    X_val, y_val = allocate_and_load(val_info)
+    print(f"Loading {len(val_paths)} validation samples (clean)...")
+    X_val, y_val = allocate_and_load(val_paths)
     
-    print(f"Loading {len(test_info)} test samples (Fold 5)...")
-    X_test, y_test = allocate_and_load(test_info)
-    
-    return X_train, y_train, X_val, y_val, X_test, y_test
+    return X_train, y_train, X_val, y_val
 
-def run_training_pipeline(with_augmentation):
-    """
-    Runs the complete training loop for one scenario (with or without augmentation).
-    Saves weights to Models and logs curves to Results.
-    """
-    # 1. LOAD DATASET BY FOLD
+def main():
+    # 1. LOAD DATASET
     try:
-        X_train, y_train, X_val, y_val, X_test, y_test = load_dataset_by_fold(with_augmentation)
+        X_train, y_train, X_val, y_val = load_stratified_dataset(val_ratio=0.1)
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         sys.exit(1)
@@ -111,21 +119,19 @@ def run_training_pipeline(with_augmentation):
     )
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
-    suffix = "augmented" if with_augmentation else "clean"
     print(f"\n==========================================")
-    print(f" TRAINING MODEL: {suffix.upper()}")
+    print(f" TRAINING MODEL: FULL PRODUCTION MODEL")
     print(f"==========================================")
     
     # 3. INITIALIZE THE MODEL, OPTIMIZER, AND LOSS FUNCTION
-    print(f"\nBuilding custom DeepNoiseCNN targeting device: {DEVICE}")
-    model = build_cnn_model(num_classes=8)
+    print(f"Building custom DeepNoiseCNN targeting device: {DEVICE}")
+    model = build_cnn_model(num_classes=len(CLASSES))
     model.to(DEVICE)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.CrossEntropyLoss()
     
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    best_model_path = os.path.join(MODELS_DIR, f"best_cnn_{suffix}.pth")
+    best_model_path = os.path.join(MODELS_DIR, "best_cnn_full.pth")
     
     # 4. TRAINING LOOP WITH EARLY STOPPING
     print(f"\nStarting CNN training (Epochs = {EPOCHS}, Batch Size = {BATCH_SIZE})...")
@@ -211,22 +217,17 @@ def run_training_pipeline(with_augmentation):
     # Restore and save the champion weights
     model.load_state_dict(best_state_dict)
     torch.save(best_state_dict, best_model_path)
-    print(f"\nModel training completed and best weights saved to: {best_model_path}")
-    
-    # Save the test set split to an .npz archive
-    test_data_path = os.path.join(MODELS_DIR, f"test_split_{suffix}.npz")
-    np.savez(test_data_path, X_test=X_test, y_test=y_test)
-    print(f"Saved test set split to: {test_data_path}")
+    print(f"\nProduction model training completed and weights saved to: {best_model_path}")
     
     # 5. PLOT LEARNING CURVES
-    print(f"\nGenerating training learning curves for {suffix}...")
+    print(f"\nGenerating training curves for full model...")
     plt.figure(figsize=(14, 5))
     
     # Plot loss curve
     plt.subplot(1, 2, 1)
     plt.plot(history["loss"], label="Train Loss", color="royalblue")
     plt.plot(history["val_loss"], label="Val Loss", color="tomato")
-    plt.title(f"CNN Loss ({suffix.capitalize()})")
+    plt.title("Production Model: Loss History")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend()
@@ -236,7 +237,7 @@ def run_training_pipeline(with_augmentation):
     plt.subplot(1, 2, 2)
     plt.plot(history["accuracy"], label="Train Acc", color="royalblue")
     plt.plot(history["val_accuracy"], label="Val Acc", color="tomato")
-    plt.title(f"CNN Accuracy ({suffix.capitalize()})")
+    plt.title("Production Model: Accuracy History")
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy")
     plt.legend()
@@ -245,26 +246,10 @@ def run_training_pipeline(with_augmentation):
     plt.tight_layout()
     
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    history_path = os.path.join(RESULTS_DIR, f"cnn_training_history_{suffix}.png")
+    history_path = os.path.join(RESULTS_DIR, "cnn_training_history_full.png")
     plt.savefig(history_path, dpi=300)
-    print(f"Saved training history curves to: {history_path}")
+    print(f"Saved production learning curves to: {history_path}")
     plt.close()
-    
-    return val_acc
-
-def main():
-    print("Scenario 1/2: Training with Data Augmentation...")
-    val_acc_aug = run_training_pipeline(with_augmentation=True)
-    
-    print("\nScenario 2/2: Training without Data Augmentation (Clean data only)...")
-    val_acc_clean = run_training_pipeline(with_augmentation=False)
-    
-    print("\n" + "="*50)
-    print("               TRAINING SUMMARIES")
-    print("="*50)
-    print(f"Augmented Model Best Val Accuracy: {val_acc_aug:.4f}")
-    print(f"Clean Model Best Val Accuracy:     {val_acc_clean:.4f}")
-    print("="*50)
 
 if __name__ == "__main__":
     main()

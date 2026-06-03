@@ -1,13 +1,15 @@
 import os
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
 
 # Append source directory to path to import configuration
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import FEATURES_DIR, CLASSES
+from config import FEATURES_DIR, RESULTS_DIR, CLASSES
 
 def load_dataset():
     """
@@ -15,9 +17,8 @@ def load_dataset():
     extracts the fold number from the filename, and computes statistical features
     (mean and standard deviation across time frames for each Mel band).
     
-    This reduces the feature representation from (128, 216) = 27,648 dimensions
-    to a highly robust 256-dimensional vector (128 mean features + 128 std features),
-    which prevents overfitting in traditional ML models.
+    Ensures validation and test splits are strictly clean (original sounds only)
+    to match the evaluation splits of our CNN models and prevent data leakage.
     """
     X_train, y_train = [], []
     X_val, y_val = [], []
@@ -41,6 +42,7 @@ def load_dataset():
             # Filenames are of the format: {fold}-{clip_id}-{take}-{target}_{aug_name}.npy
             # The first character is the predefined fold index (1 to 5)
             fold = int(npy_file[0])
+            is_orig = npy_file.endswith("_orig.npy")
             
             # Load the 2D Mel-spectrogram of shape (128, 216)
             file_path = os.path.join(class_dir, npy_file)
@@ -55,14 +57,19 @@ def load_dataset():
             
             # Sort into splits based on the predefined fold
             if fold in [1, 2, 3]:
+                # Training baseline on augmented training data (consistent with CNN)
                 X_train.append(feature_vector)
                 y_train.append(class_idx)
             elif fold == 4:
-                X_val.append(feature_vector)
-                y_val.append(class_idx)
+                # Validation set should always be clean
+                if is_orig:
+                    X_val.append(feature_vector)
+                    y_val.append(class_idx)
             elif fold == 5:
-                X_test.append(feature_vector)
-                y_test.append(class_idx)
+                # Test set should always be clean
+                if is_orig:
+                    X_test.append(feature_vector)
+                    y_test.append(class_idx)
 
     # Convert to NumPy arrays
     X_train, y_train = np.array(X_train), np.array(y_train)
@@ -122,6 +129,33 @@ def main():
     print(f"Test Accuracy: {test_acc * 100:.2f}%\n")
     print("Classification Report:")
     print(classification_report(y_test, test_preds, target_names=CLASSES))
+
+    # 5. Plot and save Confusion Matrix heatmap
+    print("Generating Confusion Matrix for the baseline champion...")
+    cm = confusion_matrix(y_test, test_preds)
+    
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(
+        cm, 
+        annot=True, 
+        fmt="d", 
+        cmap="Blues", 
+        xticklabels=CLASSES, 
+        yticklabels=CLASSES,
+        cbar=False
+    )
+    plt.title(f"Baseline {model_name}: Test Set Confusion Matrix (Fold 5)", fontsize=14, pad=15)
+    plt.xlabel("Predicted Labels", fontsize=12, labelpad=10)
+    plt.ylabel("True Labels", fontsize=12, labelpad=10)
+    plt.xticks(rotation=45, ha="right")
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    cm_path = os.path.join(RESULTS_DIR, "baseline_confusion_matrix.png")
+    plt.savefig(cm_path, dpi=300)
+    print(f"Confusion Matrix saved to: {cm_path}")
+    plt.close()
 
 if __name__ == "__main__":
     main()
